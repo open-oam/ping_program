@@ -9,6 +9,7 @@
 #include <linux/ip.h>
 #include <linux/in.h>
 #include <linux/bpf.h>
+#include <linux/if_ether.h>
 
 
 // Ethernet header
@@ -51,39 +52,65 @@ int packet_count(struct xdp_md *ctx) {
   void *data = (void *)(long)ctx->data;
 
   // Only IPv4 supported for this example
-//   struct ethhdr *ether = data;
-  if (sizeof(struct iphdr) + sizeof(struct icmphdr) > data_end)
-		return XDP_ABORTED;
+  
+  if (sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct icmphdr) > data_end)
+		return XDP_PASS;
 
-  struct iphdr *ip_header = data;
-  struct icmphdr *icmp_header = data + sizeof(iphdr);
+  struct ethhdr *ether = data;
+  struct iphdr *ip_header = data + sizeof(ethhdr);
+  struct icmphdr *icmp_header = data + sizeof(ethhdr) + sizeof(iphdr);
  
     // from ebpf-icmp-ping github
-	// if (ip_header->h_proto != __constant_htons(ETH_P_IP))
-	// 	return TC_ACT_UNSPEC;
+	if (ether->h_proto != __constant_htons(ETH_P_IP))
+		return XDP_PASS;
 
 	/* We handle only ICMP traffic */
-	// if (ip_header->protocol != IPPROTO_ICMP)
-	// 	return TC_ACT_UNSPEC;
+	if (ip_header->protocol != IPPROTO_ICMP)
+		return XDP_PASS;
 
-	// /* ...and only if it is an actual incoming ping */
-	// if (icmp->type != ICMP_PING)
-	// 	return TC_ACT_UNSPEC;
-   
+	/* ...and only if it is an actual incoming ping */
+	// if (icmp_header->type != ICMP_ECHO || ) {
+    
+    // }
 
-  if (ether->h_proto == 0x08U) {  // htons(ETH_P_IP) -> 0x08U
-    data += sizeof(*ether);
-    struct iphdr *ip = data;
-    if (data + sizeof(*ip) > data_end) {
-      return XDP_ABORTED;
-    }  
-    // Increase counter in "protocols" eBPF map
-    __u32 proto_index = ip->protocol;
-    __u64 *counter = bpf_map_lookup_elem(&protocols, &proto_index);
-    if (counter) {
-      (*counter)++;
+    switch(icmp_header->type) {
+
+    case ICMP_ECHO:
+        // log timestamp
+
+        __u8 swap[ETH_ALEN];
+        bpf_memcpy(swap, ether->h_source, ETH_ALEN);
+        bpf_memcpy(ether->h_source, ether->h_dest, ETH_ALEN);
+        bpf_memcpy(ether->h_dest, swap, ETH_ALEN);
+
+        __u32 swap_ip = ip_header->saddr;
+        ip_header->saddr = ip_header->daddr;
+        ip_header->daddr = swap_ip;
+
+        // CHECKSUM needed
+
+        // return XDP_REDIRECT; ?
+        return XDP_DROP; 
+
+    case ICMP_ECHOREPLY:
+
+    default: /* Optional */
+        return XDP_PASS;
     }
-  }
+
+//   if (ether->h_proto == 0x08U) {  // htons(ETH_P_IP) -> 0x08U
+//     data += sizeof(*ether);
+//     struct iphdr *ip = data;
+//     if (data + sizeof(*ip) > data_end) {
+//       return XDP_ABORTED;
+//     }  
+//     // Increase counter in "protocols" eBPF map
+//     __u32 proto_index = ip->protocol;
+//     __u64 *counter = bpf_map_lookup_elem(&protocols, &proto_index);
+//     if (counter) {
+//       (*counter)++;
+//     }
+//   }
 
   return XDP_PASS;
 }
