@@ -1,6 +1,6 @@
 #include "bpf_helpers.h"
 
-#include <linux/bpf.h>
+// #include <linux/bpf.h>
 #include <linux/ip.h>
 #include <linux/in.h>
 #include <linux/if_ether.h>
@@ -69,7 +69,8 @@ int packet_count(struct xdp_md *ctx) {
     }
 
     //TODO: Pull current timestamp
-    __u64 rec_time = BPF_FUNC_ktime_get_ns;
+    // __u64 rec_time = BPF_FUNC_ktime_get_ns;
+    __u64 rec_time = 0;
 
     struct icmphdr_timestamp *icmp_header = data + sizeof(struct ethhdr) + sizeof(struct iphdr);
 
