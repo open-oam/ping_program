@@ -19,12 +19,6 @@
 #define ICMP_ECHO_LEN 64
 
 
-struct perf_event_item {
-    __u16 id;
-    __u16 sequence;
-    __u32 orig_time;
-    __u64 rec_time;
-};
 
 struct icmphdr_timestamp {
     __u8 type;
@@ -45,9 +39,31 @@ BPF_MAP_DEF(perfmap) = {
 };
 BPF_MAP_ADD(perfmap);   // Macro that defines map properly (needs cleaning)
 
+struct perf_event_item
+{
+    __u16 id;
+    __u16 sequence;
+    __u32 orig_time;
+    __u64 rec_time;
+};
+_Static_assert(sizeof(struct perf_event_item) == 16, "wrong size of perf_event_item");
 
-SEC("xdp_prog")
-int packet_count(struct xdp_md *ctx) {
+static __always_inline __u16 csum_fold_helper(__wsum sum)
+{
+    sum = (sum & 0xffff) + (sum >> 16);
+    return ~((sum & 0xffff) + (sum >> 16));
+}
+
+static __always_inline __u16 ipv4_csum(void *data_start, int data_size)
+{
+    __wsum sum;
+
+    sum = bpf_csum_diff(0, 0, data_start, data_size, 0);
+    return csum_fold_helper(sum);
+}
+
+SEC("xdp")
+int xdp_prog(struct xdp_md *ctx) {
     // Set data pointers to context
     void *data = (void *)(long)ctx->data;
     void *data_end = (void *)(long)ctx->data_end;
@@ -81,24 +97,31 @@ int packet_count(struct xdp_md *ctx) {
         memcpy(dst_mac, eth_header->h_dest, ETH_ALEN);
 
         //Swap MAC addresses
-        bpf_skb_store_bytes(ctx, offsetof(struct ethhdr, h_source), dst_mac, ETH_ALEN, 0);
-        bpf_skb_store_bytes(ctx, offsetof(struct ethhdr, h_dest), src_mac, ETH_ALEN, 0);
+        memcpy(eth_header->h_dest, src_mac, ETH_ALEN);
+        memcpy(eth_header->h_source, dst_mac, ETH_ALEN);
+        // bpf_skb_store_bytes(ctx, offsetof(struct ethhdr, h_source), dst_mac, ETH_ALEN, 0);
+        // bpf_skb_store_bytes(ctx, offsetof(struct ethhdr, h_dest), src_mac, ETH_ALEN, 0);
 
         //Get IP addresses
         __u32 src_ip = ip_header->saddr;
         __u32 dst_ip = ip_header->daddr;
 
-        //Swap IP addresses
-        bpf_skb_store_bytes(ctx, IP_SRC_OFF, &dst_ip, sizeof(dst_ip), 0);
-        bpf_skb_store_bytes(ctx, IP_DST_OFF, &src_ip, sizeof(src_ip), 0);
+        // //Swap IP addresses
+        ip_header->saddr = dst_ip;
+        ip_header->daddr = src_ip;
+        // bpf_skb_store_bytes(ctx, IP_SRC_OFF, &dst_ip, sizeof(dst_ip), 0);
+        // bpf_skb_store_bytes(ctx, IP_DST_OFF, &src_ip, sizeof(src_ip), 0);
 
-        //Recompute IP checksum and save to context
-        __u8 new_type = ICMP_ECHOREPLY;
-        bpf_l4_csum_replace(ctx, ICMP_CSUM_OFF, ICMP_ECHO, new_type, ICMP_CSUM_SIZE);
-        bpf_skb_store_bytes(ctx, ICMP_TYPE_OFF, &new_type, sizeof(new_type), 0);
+
+        // //Recompute IP checksum and save to context
+        // __u8 new_type = ICMP_ECHOREPLY;
+        // bpf_l4_csum_replace(ctx, ICMP_CSUM_OFF, ICMP_ECHO, new_type, ICMP_CSUM_SIZE);
+        // bpf_skb_store_bytes(ctx, ICMP_TYPE_OFF, &new_type, sizeof(new_type), 0);
 
         // icmp_header->type = ICMP_TIMESTAMPREPLY;
         // icmp_header->checksum = 0;
+        // __u64 csum = bpf_csum_diff(ICMP_TIMESTAMP, 0, ICMP_TIMESTAMPREPLY, ICMP_ECHO_LEN, 0);
+        // icmp_header->checksum = bpf_csum_diff(0, 0, icmp_header, ICMP_ECHO_LEN, 0);
         // icmp_header->checksum = ipv4_csum(icmp_header, ICMP_ECHO_LEN);
 
         //TODO: Send packet back out same interface
@@ -134,3 +157,4 @@ int packet_count(struct xdp_md *ctx) {
     return XDP_PASS;
 }
 
+char _license[] SEC("license") = "GPL";
