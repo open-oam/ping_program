@@ -10,10 +10,8 @@
 
 #define IP_SRC_OFF (ETH_HLEN + offsetof(struct iphdr, saddr))
 #define IP_DST_OFF (ETH_HLEN + offsetof(struct iphdr, daddr))
-#define ICMP_CSUM_OFF (ETH_HLEN + sizeof(struct iphdr) + offsetof(struct icmphdr, checksum))
 #define ICMP_TYPE_OFF (ETH_HLEN + sizeof(struct iphdr) + offsetof(struct icmphdr, type))
 
-#define ICMP_CSUM_SIZE sizeof(__u16)
 #define ICMP_PKT_SIZE sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct icmphdr)
 
 #define ICMP_ECHO_LEN 64
@@ -48,19 +46,27 @@ struct perf_event_item
 };
 _Static_assert(sizeof(struct perf_event_item) == 16, "wrong size of perf_event_item");
 
-// static __always_inline __u16 csum_fold_helper(__wsum sum)
-// {
-//     sum = (sum & 0xffff) + (sum >> 16);
-//     return ~((sum & 0xffff) + (sum >> 16));
-// }
 
-// static __always_inline __u16 ipv4_csum(void *data_start, int data_size)
-// {
-//     __wsum sum;
+__u16 calc_checksum_diff_u8 (__u16 old_checksum, __u8 old_value, __u8 new_value, __u32 value_offset) {
 
-//     sum = bpf_csum_diff(0, 0, data_start, data_size, 0);
-//     return csum_fold_helper(sum);
-// }
+    if (new_value == old_value)
+	    return old_checksum;
+    int offset = 8 * (value_offset % 2);
+
+    if (new_value > old_value) {
+        int modifier = ((int)new_value - (int)old_value) << offset;
+        __u32 checksum = (__u32)old_checksum - modifier;
+        checksum = (checksum & 0xffff) + (checksum >> 16);
+        return checksum;
+    }
+    else if (old_value > new_value) {
+        int modifier = ((int)old_value - (int)new_value) << offset;
+        __u32 checksum = (__u32)old_checksum + modifier;
+        checksum = (checksum & 0xffff) + (checksum >> 16);
+        return checksum;
+    }
+    return -1;
+}
 
 SEC("xdp")
 int xdp_prog(struct xdp_md *ctx) {
@@ -99,8 +105,6 @@ int xdp_prog(struct xdp_md *ctx) {
         //Swap MAC addresses
         memcpy(eth_header->h_dest, src_mac, ETH_ALEN);
         memcpy(eth_header->h_source, dst_mac, ETH_ALEN);
-        // bpf_skb_store_bytes(ctx, offsetof(struct ethhdr, h_source), dst_mac, ETH_ALEN, 0);
-        // bpf_skb_store_bytes(ctx, offsetof(struct ethhdr, h_dest), src_mac, ETH_ALEN, 0);
 
         //Get IP addresses
         __u32 src_ip = ip_header->saddr;
@@ -109,27 +113,16 @@ int xdp_prog(struct xdp_md *ctx) {
         // //Swap IP addresses
         ip_header->saddr = dst_ip;
         ip_header->daddr = src_ip;
-        // bpf_skb_store_bytes(ctx, IP_SRC_OFF, &dst_ip, sizeof(dst_ip), 0);
-        // bpf_skb_store_bytes(ctx, IP_DST_OFF, &src_ip, sizeof(src_ip), 0);
 
-
-        // //Recompute IP checksum and save to context
-        // __u8 new_type = ICMP_ECHOREPLY;
-        // bpf_l4_csum_replace(ctx, ICMP_CSUM_OFF, ICMP_ECHO, new_type, ICMP_CSUM_SIZE);
-        // bpf_skb_store_bytes(ctx, ICMP_TYPE_OFF, &new_type, sizeof(new_type), 0);
-
-        // icmp_header->type = ICMP_TIMESTAMPREPLY;
-        // icmp_header->checksum = 0;
-        // __u64 csum = bpf_csum_diff(ICMP_TIMESTAMP, 0, ICMP_TIMESTAMPREPLY, ICMP_ECHO_LEN, 0);
-        // icmp_header->checksum = bpf_csum_diff(0, 0, icmp_header, ICMP_ECHO_LEN, 0);
-        // icmp_header->checksum = ipv4_csum(icmp_header, ICMP_ECHO_LEN);
+        //Recompute IP checksum and save to context
+        
+        icmp_header->type = ICMP_ECHOREPLY;
+        icmp_header->checksum = calc_checksum_diff_u8(icmp_header->checksum, ICMP_ECHO, ICMP_ECHOREPLY, ICMP_TYPE_OFF);
 
         //TODO: Send packet back out same interface
-        return bpf_redirect(0, 0);
+        return bpf_redirect(3, 0);
 
-        // return XDP_PASS;
-    }  else 
-    if (icmp_header->type == ICMP_ECHOREPLY) {
+    } else if (icmp_header->type == ICMP_ECHOREPLY) {
         
         //TODO: convert big endian to little endian
         struct perf_event_item event = {
