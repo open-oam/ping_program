@@ -26,15 +26,15 @@ const (
 
 // In sync with xdp_dump.c  "struct perf_event_item"
 type perfEventItem struct {
-	id, seq uint16
-	orig_time uint32
-	rec_time uint64
+	ID, Seq  uint16
+	OrigTime uint32
+	RecTime  uint64
 }
 
 func main() {
 	flag.Parse()
 	if *iface == "" {
-		fatalError("-iface is required.")
+		fatalError("-iface is requireD.")
 	}
 
 	fmt.Println("XDP dump example program")
@@ -46,7 +46,7 @@ func main() {
 		fatalError("LoadElf() failed: %v", err)
 	}
 	printBpfInfo(bpf)
-	
+
 	fmt.Printf("%+v\n", bpf)
 
 	// Find special "PERF_EVENT" eBPF map
@@ -87,7 +87,7 @@ func main() {
 	}
 
 	fmt.Println("XDP program successfully loaded and attached.")
-	fmt.Println("All new TCP connection requests (SYN) coming to this host will be dumped here.")
+	fmt.Println("All ICMP coming to this host will be dumped here.")
 	fmt.Println()
 
 	go func() {
@@ -95,10 +95,11 @@ func main() {
 		for {
 			if eventData, ok := <-perfEvents; ok {
 				reader := bytes.NewReader(eventData)
-				binary.Read(reader, binary.LittleEndian, &event)
-				fmt.Printf("id: %v,\n sequence: %v,\n orig_timestamp: %v,\n rec_timestamp: %v \n",
-					event.id,event.seq,
-					event.orig_time, event.rec_time,
+				fmt.Printf("%+v\n", reader)
+				binary.Read(reader, binary.BigEndian, &event)
+				fmt.Printf("ID: %v,\nSequence: %v,\nOriginate Timestamp: %v,\nRecieve Timestamp: %v \n",
+					event.ID, event.Seq,
+					event.OrigTime, event.RecTime,
 				)
 				if len(eventData)-metadataSize > 0 {
 					// event contains packet sample as well

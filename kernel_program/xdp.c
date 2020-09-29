@@ -48,19 +48,19 @@ struct perf_event_item
 };
 _Static_assert(sizeof(struct perf_event_item) == 16, "wrong size of perf_event_item");
 
-static __always_inline __u16 csum_fold_helper(__wsum sum)
-{
-    sum = (sum & 0xffff) + (sum >> 16);
-    return ~((sum & 0xffff) + (sum >> 16));
-}
+// static __always_inline __u16 csum_fold_helper(__wsum sum)
+// {
+//     sum = (sum & 0xffff) + (sum >> 16);
+//     return ~((sum & 0xffff) + (sum >> 16));
+// }
 
-static __always_inline __u16 ipv4_csum(void *data_start, int data_size)
-{
-    __wsum sum;
+// static __always_inline __u16 ipv4_csum(void *data_start, int data_size)
+// {
+//     __wsum sum;
 
-    sum = bpf_csum_diff(0, 0, data_start, data_size, 0);
-    return csum_fold_helper(sum);
-}
+//     sum = bpf_csum_diff(0, 0, data_start, data_size, 0);
+//     return csum_fold_helper(sum);
+// }
 
 SEC("xdp")
 int xdp_prog(struct xdp_md *ctx) {
@@ -85,12 +85,12 @@ int xdp_prog(struct xdp_md *ctx) {
     }
 
     //TODO: Pull current timestamp
-    // __u64 rec_time = BPF_FUNC_ktime_get_ns;
-    __u64 rec_time = 0;
+    __u64 rec_time = bpf_ktime_get_ns();
+    // __u64 rec_time = 0;
 
     struct icmphdr_timestamp *icmp_header = data + sizeof(struct ethhdr) + sizeof(struct iphdr);
 
-    if (icmp_header->type == ICMP_TIMESTAMP) {
+    if (icmp_header->type == ICMP_ECHO) {
         __u8 src_mac[ETH_ALEN];
         __u8 dst_mac[ETH_ALEN];
         memcpy(src_mac, eth_header->h_source, ETH_ALEN);
@@ -125,9 +125,11 @@ int xdp_prog(struct xdp_md *ctx) {
         // icmp_header->checksum = ipv4_csum(icmp_header, ICMP_ECHO_LEN);
 
         //TODO: Send packet back out same interface
+        return bpf_redirect(0, 0);
 
-        return XDP_PASS;
-    } else if (icmp_header->type == ICMP_TIMESTAMPREPLY) {
+        // return XDP_PASS;
+    }  else 
+    if (icmp_header->type == ICMP_ECHOREPLY) {
         
         //TODO: convert big endian to little endian
         struct perf_event_item event = {
@@ -148,10 +150,10 @@ int xdp_prog(struct xdp_md *ctx) {
         // of original packet (ctx) to the end of the data.
 
         // So total perf event length will be sizeof(evt) + packet_size
-        // __u64 flags = BPF_F_CURRENT_CPU | (data_end - data << 32);
-        __u64 flags = 0;
+        __u64 flags = BPF_F_CURRENT_CPU | ((data_end - data) << 32);
+        // __u64 flags = BPF_F_CURRENT_CPU;
         bpf_perf_event_output(ctx, &perfmap, flags, &event, sizeof(event));
-        return XDP_PASS;
+        return XDP_DROP;
     }
 
     return XDP_PASS;
