@@ -29,12 +29,13 @@ type perfEventItem struct {
 	ID, Seq  uint16
 	OrigTime uint32
 	RecTime  uint64
+	SrcIP    uint32
 }
 
 func main() {
 	flag.Parse()
 	if *iface == "" {
-		fatalError("-iface is requireD.")
+		fatalError("-iface is required.")
 	}
 
 	fmt.Println("XDP dump example program")
@@ -54,6 +55,11 @@ func main() {
 	if perfmap == nil {
 		fatalError("eBPF map 'perfmap' not found")
 	}
+
+	// ifaceMap := bpf.GetMapByName("iface_lookup")
+	// if perfmap == nil {
+	// 	fatalError("eBPF map 'iface_lookup' not found")
+	// }
 
 	// Program name matches function name in xdp.c:
 	//      int xdp_dump(struct xdp_md *ctx)
