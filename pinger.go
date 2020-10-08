@@ -137,10 +137,10 @@ func main() {
 			}
 
 			numPosted := xsk.Transmit(descs)
-			// _, numCompleted, err := xsk.Poll(1)
-			// if err != nil {
-			// 	panic(err)
-			// }
+			_, numCompleted, err := xsk.Poll(1)
+			if err != nil {
+				panic(err)
+			}
 			fmt.Printf("Transmitted packets: %d posted, %d transmitted\n", numPosted, -1)
 		}
 		time.Sleep(time.Duration(150) * time.Millisecond)
