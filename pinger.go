@@ -141,7 +141,7 @@ func main() {
 			if err != nil {
 				panic(err)
 			}
-			fmt.Printf("Transmitted packets: %d posted, %d transmitted\n", numPosted, -1)
+			fmt.Printf("Transmitted packets: %d posted, %d transmitted\n", numPosted, numCompleted)
 		}
 		time.Sleep(time.Duration(150) * time.Millisecond)
 	}
