@@ -128,18 +128,20 @@ func main() {
 	// transmit
 	for i := 0; i < PingCount; i++ {
 
-		descs := xsk.GetDescs(1) //xsk.NumFreeTxSlots())
+		descs := xsk.GetDescs(xsk.NumFreeTxSlots())
 		if len(descs) > 0 {
 			fmt.Printf("Sending Ping Packet: %d\n", i)
-			for i, _ := range descs {
-				descs[i].Len = uint32(frameLen)
+
+			for j, _ := range descs {
+				descs[j].Len = uint32(frameLen)
 			}
+
 			numPosted := xsk.Transmit(descs)
-			_, numCompleted, err := xsk.Poll(1)
-			if err != nil {
-				panic(err)
-			}
-			fmt.Printf("Transmitted packets: %d posted, %d transmitted\n", numPosted, numCompleted)
+			// _, numCompleted, err := xsk.Poll(1)
+			// if err != nil {
+			// 	panic(err)
+			// }
+			fmt.Printf("Transmitted packets: %d posted, %d transmitted\n", numPosted, -1)
 		}
 		time.Sleep(time.Duration(150) * time.Millisecond)
 	}
