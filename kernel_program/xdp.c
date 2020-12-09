@@ -118,6 +118,8 @@ int xdp_prog(struct xdp_md *ctx) {
         // //Swap IP addresses
         ip_header->saddr = dst_ip;
         ip_header->daddr = src_ip;
+	
+	ip_header->ttl = 64;
 
         //Recompute IP checksum and save to context
         
